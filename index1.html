@@ -342,7 +342,7 @@ class Player{
 class Ally {
     constructor(x,y, char = "") {
         this.p = new Vector(x,y); this.color = "yellow"
-        this.size = 4; this.vision_radius = 20
+        this.size =7; this.vision_radius = 20
         this.v = new Vector(-0.5,0); this.char = char;
         this.alive = true
 
@@ -356,7 +356,7 @@ class Ally {
         ctx.fill()
         if(this.char != "") {
             ctx.fillStyle = this.color
-            ctx.font = "14px Helivicia"
+            ctx.font = "18px Helivicia"
             ctx.textAlign = "center"
             ctx.textBaseline = "middle"
             ctx.fillText(this.char, this.p.x, this.p.y)

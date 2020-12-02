@@ -10,16 +10,17 @@
         <canvas id="cvs"></canvas> 
    
       <script>
-      
-           
+         
+
+         
       
 'use strict'
 
-var fps, now, c, ctx, W, H, player, target_ray, target_point,
+var score_board, now, c, ctx, W, H, player, target_ray, target_point,
     enemy_ref, health_ref, rays, player_rays, view_points,
     intersects, joysticks, bullets, player_bullets, enemies,
     health, start_health, enemy_count, alive_enemies,
-    enemy_shoot_interval, enemy_count = 10,
+    enemy_shoot_interval, enemy_count = 10,hit_count = 0,
     shoot_cooldown = 500, shoot_time_frame, allies,
     start_health = 3, weapon = "gun", user_id,
     score = 0, score_ref, level
@@ -37,6 +38,28 @@ const sum = (arr) => {
 }
 
 
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const init_score_board = () => {
+    score_board = document.createElement("a")
+    
+    score_board.style.width = window.innerWidth+"px";
+   
+    score_board.style.backgroundColor = "transparent"
+   // score_board.style.position = "absolute";
+    score_board.style.textAlign = "center";
+    score_board.style.color = "white";
+    score_board.style.fontWeight="bold";
+    document.body.appendChild(score_board)
+    
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const update_score_board = () => {
+    score_board.innerHTML = "| Got Hit: "+hit_count+" | "+" Total Killed: "+ score+" | ";
+    
+}
 
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
@@ -58,7 +81,7 @@ const init_canvas = () => {
     c   = document.getElementById("cvs")
     ctx = c.getContext("2d")
     c.width = window.innerWidth
-    c.height = window.innerHeight
+    c.height = window.innerHeight;
     W = c.width
     H = c.height
 }
@@ -331,7 +354,8 @@ class Player{
                     color = "red"; hit = true
                     bullets.splice(bullets.indexOf(bullet),1)
                 }
-            }         
+            }
+            if(hit) hit_count++;         
         }
     draw(){
         this.p.draw(ctx, this.color, this.size);
@@ -376,6 +400,7 @@ class Ally {
             let d = this.size + bullet.size
             if(this.p.sub(bullet.p).length < d && this.alive) {
                 this.alive = false;
+                score++;
                 allies.splice(allies.indexOf(this),1)
                 player_bullets.splice(player_bullets.indexOf(bullet),1)
                
@@ -392,7 +417,7 @@ class Ally {
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
 const create_player = (x,y) => {
-	player = new Player(x,y);
+    player = new Player(x,y);
 }
 
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
@@ -631,9 +656,11 @@ const set_level = value => {
 
 
 const setup = (first_load = 1) => {
+    
     init_vars()
     if(first_load) {
-        set_level(2)
+        init_score_board()
+        set_level(1)
     }
     
     create_map() 
@@ -680,18 +707,19 @@ const draw = () => {
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
 const update = () => {
-	shoot_time_frame -= 1000/60
+    shoot_time_frame -= 1000/60
     intersects = []
     player.update()
     update_allies()
     update_bullets()
+    update_score_board()
     
 }
 
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
 const main = () => {
-   
+    
     update();
     clear();
     draw()
@@ -702,18 +730,19 @@ const main = () => {
 
 
 window.onload = () => {
-    add_event_listeners(); 
-    init_canvas()
     
-    requestAnimationFrame(main)
+    init_score_board();
     init_canvas()
     setup()
+    requestAnimationFrame(main)
     requestAnimationFrame(main)
 }
 
 
 
       
+      
+
       
       </script>
       <style>

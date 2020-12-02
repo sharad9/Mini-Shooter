@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Page Title</title>
+	 <meta name="viewport" content="user-scalable=no, initial-scale=1.0, maximum-scale=1.0, width=device-width">
+    
+    </head>
+    <body>
+	
+        <canvas id="cvs"></canvas> 
+   
+      <script>
+      
+           
+      
+'use strict'
+
+var fps, now, c, ctx, W, H, player, target_ray, target_point,
+    enemy_ref, health_ref, rays, player_rays, view_points,
+    intersects, joysticks, bullets, player_bullets, enemies,
+    health, start_health, enemy_count, alive_enemies,
+    enemy_shoot_interval, enemy_count = 10,
+    shoot_cooldown = 500, shoot_time_frame, allies,
+    start_health = 3, weapon = "gun", user_id,
+    score = 0, score_ref, level
+
+const print = s => console.log(JSON.stringify(s))
+const deg = (rad) => rad*180/Math.PI
+const rad = (deg) => deg*Math.PI/180
+const cos = a => Math.cos(rad(a))
+const sin = a => Math.sin(rad(a))
+
+const sum = (arr) => {
+    var sum = 0
+    for(let e of arr) sum += e
+    return sum
+}
+
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+const init_vars = () => {
+    rays = [], player_rays = 0
+    view_points = [], intersects = []
+    joysticks = {}
+    bullets = [], player_bullets = []
+    enemies = [], health = start_health,
+    alive_enemies = 10, shoot_time_frame  = 200,
+    allies = []
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+    
+const init_canvas = () => {
+    c   = document.getElementById("cvs")
+    ctx = c.getContext("2d")
+    c.width = window.innerWidth
+    c.height = window.innerHeight
+    W = c.width
+    H = c.height
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+class Vector {
+    constructor(x,y) {
+        this.x = x; this.y = y
+    }
+    
+    add(v) {
+        return new Vector(this.x+v.x, this.y+v.y)
+    }
+    
+    sub(v) {
+        return new Vector(this.x-v.x, this.y-v.y)
+    }
+    
+    mult(d) {
+        return new Vector(this.x*d, this.y*d)
+    }
+    
+    dot(v) {
+        return this.x*v.x + this.y*v.y
+    }
+    
+    get norm() {
+        return new Vector(this.x/this.length,this.y/this.length)
+    }
+    
+    get copy() {
+        return new Vector(this.x, this.y)
+    }
+    
+    get length() {
+        return Math.hypot(this.x,this.y)
+    }
+    
+    rotate(a) {
+        let x = this.x; let y = this.y
+        this.x = x*cos(a) + y*sin(a)
+        this.y = -x*sin(a) + y*cos(a)
+    }
+    
+    draw(cx = ctx, color = "lime", radius) {
+        cx.fillStyle = color
+        cx.beginPath()
+        cx.arc(this.x, this.y, radius||1, 0, 2*Math.PI)
+        cx.fill()
+        cx.closePath()
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+class Joystick {
+    constructor(id, x, y, active = true) {
+        this.id = id; this.active = active
+        this.pos = new Vector(x,y)
+        this._touch = new Vector(x,y)
+        this._vector = new Vector(0,0)
+    }
+    
+    set touch(vec) {
+        this._touch = vec
+        let v = this._touch.sub(this.pos)
+        if(v.length > 40) {
+            v = v.norm.mult(40)
+            this._touch = this.pos.add(v)
+        } this._vector = v
+    }
+    get vector() {return this._vector}
+    
+    draw(cx = ctx) {
+        if(this.active) {
+            let p = this.pos; let t = this._touch
+            cx.strokeStyle = "lime"
+            cx.beginPath()
+            cx.arc(p.x,p.y,40,0,2*Math.PI); cx.stroke()
+            cx.closePath(); cx.beginPath()
+            cx.arc(t.x,t.y,20,0,2*Math.PI); cx.stroke()
+            cx.closePath()
+            if(this.info) {
+                cx.font = "12px Helivicia"
+                cx.textAlign = "center"
+                cx.textBaseline = "middle"
+                cx.fillStyle = "lime"
+                cx.fillText(this.info, p.x, p.y)
+            }
+        }
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+const touch_start = e => {
+    let touches = e.changedTouches
+    for(let j = 0; j < touches.length; j++) {
+        let i = touches[j].clientX < W/2? 0: 1
+        joysticks["$"+i] = new Joystick(
+            touches[j].identifier,
+            touches[j].clientX, touches[j].clientY
+        ); joysticks["$"+i].info = i==1?"look":"move"
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const touch_move = e => {
+    let c = e.changedTouches
+    for(let j = 0; j < c.length; j++) {
+        for(let i in joysticks) {
+            if(c[j].identifier == joysticks[i].id) {
+
+                joysticks[i].touch = new Vector(c[j].clientX,c[j].clientY)
+            }
+        }
+    }
+
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const touch_end = e => {
+    let c = e.changedTouches
+    let shoot = false
+    for(let j = 0; j < c.length; j++) {
+        for(let i in joysticks) {
+            if(c[j].identifier == joysticks[i].id &&
+            joysticks[i].active) {
+                joysticks[i].active = false
+                if(i=="$1") {
+                    shoot = true
+                    target_ray = null
+                }
+            }
+        }
+    } if(shoot && shoot_time_frame < 0) {
+        player_shoot()
+        shoot_time_frame = shoot_cooldown
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const touch_cancel = e => {
+    touch_end(e)
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const add_event_listeners = () => {
+    window.addEventListener("touchstart", touch_start)
+    window.addEventListener("touchmove", touch_move)
+    window.addEventListener("touchend", touch_end)
+    window.addEventListener("touchcancel", touch_cancel)
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+class Bullet {
+    constructor(p, v, color = "white", active = true) {
+        this.p = p
+        this.v = v.copy.norm.mult(3)
+        this.color = color
+        this.active = active
+        this.size = 2.5
+    }
+    
+    update() {
+        if(this.active) {
+            this.p = this.p.add(this.v)
+            if(check_collision(this.p, this.size)) {
+                let i = player_bullets.indexOf(this)
+                let j = bullets.indexOf(this)
+                if(i >= 0) player_bullets.splice(i,1)
+                if(j >= 0) bullets.splice(j,1)
+                this.active = false
+            }
+        }
+    }
+    
+    draw() {
+        if(this.active) {
+            this.p.draw(ctx, this.color, this.size)
+        }
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+class Ray {
+    constructor(px,py, vx,vy, length = 1e3) {
+        this.p = new Vector(px,py)
+        this.v = new Vector(vx,vy)
+        this.length = length
+        this.draw_length = length
+    }
+    
+   
+    
+     draw(cx = ctx, color = "red", width = 2, ints = false,
+         dp = false) {
+        cx.strokeStyle = color
+        cx.lineWidth = width
+        cx.beginPath()
+        let l = this.draw_length || this.length
+        cx.moveTo(this.p.x, this.p.y)
+        cx.lineTo(this.p.x+this.v.norm.x*l,
+                  this.p.y+this.v.norm.y*l)
+        cx.stroke()
+        cx.closePath()
+           
+    }
+  
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+class Player{
+    constructor(x,y){
+        this.p = new Vector(x,y);
+        this.v = new Vector(0,-1);
+        this.size = 10;
+        this.color = "#00b87d";
+        this.fov = 120;
+    }
+
+    update() {
+            let color, hit = false
+            let mv = joysticks["$0"]
+            if(mv && mv.active) {
+                let p = mv.vector.mult(0.05)
+                let px = new Vector(this.p.x+p.x, this.p.y),
+                    py = new Vector(this.p.x, this.p.y+p.y),
+                    psx = new Vector(p.x,0),
+                    psy = new Vector(0,p.y)
+                if(!check_collision(px, this.size)) {
+                    this.p = this.p.add(psx)
+                } if(!check_collision(py, this.size)) {
+                    this.p = this.p.add(psy)
+                }
+            }
+            let lv = joysticks["$1"]
+            if(lv && lv.active) {
+                let v = lv.vector.norm
+                if(Math.abs(v.x) > null) this.v = v
+                target_ray = new Ray(this.p.x,this.p.y,
+                                     this.v.x, this.v.y)
+                
+                
+                let ps = []
+                
+                for(let r of rays.slice(0,rays.length)) {
+                    let i = intersection_point(target_ray,r)
+                    if(i) ps.push([i,this.p.sub(i).length])
+                } ps.sort((a,b)=>{
+                    return parseInt(a[1])<parseInt(b[1])?-1:1}
+                )
+                target_point = ps[0][0]
+                target_ray.draw_length = ps[0][1]
+            }
+
+            for(let bullet of bullets) {
+                let d = bullet.p.sub(this.p).length
+                let r = this.size + bullet.size
+                if(d < r) {
+                    color = "red"; hit = true
+                    bullets.splice(bullets.indexOf(bullet),1)
+                }
+            }         
+        }
+    draw(){
+        this.p.draw(ctx, this.color, this.size);
+    } 
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+class Ally {
+    constructor(x,y, char = "") {
+        this.p = new Vector(x,y); this.color = "yellow"
+        this.size = 4; this.vision_radius = 20
+        this.v = new Vector(-0.5,0); this.char = char;
+        this.alive = true
+
+    }
+    
+    draw() {
+        ctx.beginPath()
+        ctx.arc(this.p.x, this.p.y, this.vision_radius,0,2*Math.PI)
+        ctx.closePath()
+        ctx.fillStyle = "rgba(255,255,255,0.3)"
+        ctx.fill()
+        if(this.char != "") {
+            ctx.fillStyle = this.color
+            ctx.font = "14px Helivicia"
+            ctx.textAlign = "center"
+            ctx.textBaseline = "middle"
+            ctx.fillText(this.char, this.p.x, this.p.y)
+        } else this.p.draw(ctx, this.color, this.size)
+    }
+    
+    update() {
+        if(this.alive){
+        this.v.rotate(Math.floor(Math.random()*16)-8)
+        let p = this.p.add(this.v)
+        if(check_collision(p, this.size)) {
+            this.v = this.v.mult(-1)
+        } this.p = this.p.add(this.v)
+
+        for(let bullet of player_bullets) {
+            let d = this.size + bullet.size
+            if(this.p.sub(bullet.p).length < d && this.alive) {
+                this.alive = false;
+                allies.splice(allies.indexOf(this),1)
+                player_bullets.splice(player_bullets.indexOf(bullet),1)
+               
+            }
+        }
+        check_then_reset()
+
+        }
+
+        
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const create_player = (x,y) => {
+	player = new Player(x,y);
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const create_map = () => {
+    let d = 20
+    rays.push(new Ray(d,d, 0,1, H-2*d))
+    rays.push(new Ray(W-d,d, 0,1, H-2*d))
+    rays.push(new Ray(d,d, 1,0, W-2*d))
+    rays.push(new Ray(d,H-d, 1,0, W-2*d))
+    
+    if(level%2 == 0) {
+        rays.push(new Ray(W/2-20, H/2-20, 0,1, 40))
+        rays.push(new Ray(W/2-20, H/2-20, 1,0, 10))
+        rays.push(new Ray(W/2+20, H/2-20, -1,0, 10))
+        rays.push(new Ray(W/2+20, H/2-20, 0,1, 40))
+        rays.push(new Ray(W/2-20, H/2+20, 1,0, 40))
+        rays.push(new Ray(d,H/4, 1,0, W/3))
+        rays.push(new Ray(W-W/3-d,3*H/4, 1,0, W/3))
+        rays.push(new Ray(2*W/3,H/3, 0,1, H/3))
+        rays.push(new Ray(2*W/3,H/3, -1,0, W/8))
+        rays.push(new Ray(W/4,2*H/4, 0,1, H/3))
+        rays.push(new Ray(W/4,H-H/3, 1,0, W/8))   
+    } else /* if(level%2 == 0) */ {
+        rays.push(new Ray(3/5*W, H-d, 0,-1, H/4))
+        rays.push(new Ray(3/5*W-W/3, 3/4*H-d, 1,0, W/5-d/2-10+W/3))
+        rays.push(new Ray(d, 7/8*H-d, 1,0, 2/5*W))
+        rays.push(new Ray(W-d, 3/4*H-d, -1,0, W/5-d/2-10))
+        rays.push(new Ray(d, 3/8*H, 1,0, 2/5*W))
+        rays.push(new Ray(2/5*W+d, 5/8*H, 0,-1, 1/4*H))
+        rays.push(new Ray(2/5*W+d, d, 0,1, 3/20*W))
+        rays.push(new Ray(3/5*W+d, 1/2*H, 0,-1, 3/10*W))
+        rays.push(new Ray(3/5*W+d, 1/2*H, 1,0, W-d-(3/5*W+d)))
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+const create_allies = () => {
+     for(let i = 0; i < enemy_count; i++) {
+        let x = Math.floor((W-40)*Math.random())+20
+        let y = Math.floor((H-40)*Math.random())+20
+        let p = new Vector(x,y)
+         allies.push(new Ally(p.x, p.y, "🐼"))
+    }
+    
+}
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const intersection_point = (g, h) => {
+   
+  
+    
+    let A = g.p, B = g.p.add(g.v.norm.mult(g.length)), C=h.p, D = h.p.add(h.v.norm.mult(h.length));
+     
+    // Line AB represented as a1x + b1y = c1 
+    let a1 = B.y - A.y; 
+    let b1 = A.x - B.x; 
+    let c1 = a1*(A.x) + b1*(A.y); 
+
+    // Line CD represented as a2x + b2y = c2 
+    let a2 = D.y - C.y; 
+    let b2 = C.x - D.x; 
+    let c2 = a2*(C.x)+ b2*(C.y); 
+
+    let determinant = a1*b2 - a2*b1; 
+   
+    
+        
+    let x = (b2*c1 - b1*c2)/determinant; 
+    let y = (a1*c2 - a2*c1)/determinant; 
+    let point = new Vector(x, y); 
+    let look = point.sub(g.p)
+    let wall = point.sub(h.p)
+    
+    if(look.length <= g.length) {
+    if(wall.length <= h.length) {
+            if(g.v.add(look).length > g.v.sub(look).length &&
+               h.v.add(wall).length > h.v.sub(wall).length) {
+                g.draw_length = look.length
+                return point
+            }
+            }
+        }
+            
+    }
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const angle = (v, u) => {
+    let value = -deg(Math.atan2(v.x*u.y-v.y*u.x,
+    v.x*u.x+v.y*u.y))
+    return value < 0? 360-Math.abs(value): value
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const collinear = (v_1, v_2) => {
+    let r = v_1.x / v_2.x
+    if(r*v_2.y == v_1.y) return true
+    return false
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const check_collision = (p,d) => {
+    for(let ray of rays.slice(0, rays.length)) {
+        let v = ray.v
+        let u = p.sub(ray.p)
+        let a = angle(v,u)
+        let b = u.length
+        if((Math.abs(b*sin(a))<d) && (b<ray.length) &&
+        (a<95 || a> 265) || b < d)
+            return true
+    } return false
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const player_shoot = () => {
+   
+        player_bullets.push(new Bullet(player.p, player.v))    
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const ally_shoot_setup = () =>{
+  enemy_shoot_interval=  setInterval(()=>{
+        for(let ally of allies) {
+            setTimeout(()=>{
+                let b = new Bullet(ally.p,
+                player.p.sub(ally.p))
+                b.color = "red"
+                if(ally.alive) bullets.push(b)
+            },
+            allies.indexOf(ally)*500)
+        }
+    }, enemy_count*500)
+
+}
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const draw_target = () => {
+    if(target_ray) {
+        ctx.save(); ctx.setLineDash([3,45])
+        target_ray.draw(); ctx.restore()
+        if(target_point) target_point.draw(ctx, "rgba(255,0,0,1)", 5)
+    }
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const draw_rays_and_poly = () => {
+    for(let ray of rays.slice(0,rays.length))
+        ray.draw()
+    
+   
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const draw_bullets = () => {
+    for(let bullet of bullets) bullet.draw()
+    for(let bullet of player_bullets) bullet.draw()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const draw_joysticks = () => {
+
+    for(let i in joysticks)
+        joysticks[i].draw()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+const draw_allies = () => {
+    for(let ally of allies) ally.draw()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const update_bullets = () => {
+    for(let bullet of bullets) bullet.update()
+    for(let bullet of player_bullets) bullet.update()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const update_allies = () => {
+    for(let ally of allies) ally.update()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+const check_then_reset = () => {
+    
+    if(allies.length === 0) setTimeout(()=>{reset("won")},200)
+}
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const clear = () => {
+    c.width = c.width
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const set_level = value => {
+    level = value
+    
+    if(level%2 == 1) create_player(7/8*W, 7/8*H)
+    else create_player(W/2, H/2+10)
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+
+const setup = (first_load = 1) => {
+    init_vars()
+    if(first_load) {
+        set_level(2)
+    }
+    
+    create_map() 
+    create_allies()
+    ally_shoot_setup()
+    add_event_listeners()
+    
+}
+
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const reset = state => {
+    clearInterval(enemy_shoot_interval)
+    if(state == "won") {
+       
+        set_level(++level)
+    }
+    else {
+       
+        set_level(--level)
+        
+    }
+    
+    setup(0)
+    
+    check_then_reset()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+const draw = () => {
+  
+   
+    draw_rays_and_poly();
+    draw_target()
+    player.draw()
+    draw_bullets()
+    draw_allies()
+    draw_joysticks()
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const update = () => {
+	shoot_time_frame -= 1000/60
+    intersects = []
+    player.update()
+    update_allies()
+    update_bullets()
+    
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+const main = () => {
+   
+    update();
+    clear();
+    draw()
+    requestAnimationFrame(main)
+}
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
+window.onload = () => {
+    add_event_listeners(); 
+    init_canvas()
+    
+    requestAnimationFrame(main)
+    init_canvas()
+    setup()
+    requestAnimationFrame(main)
+}
+
+
+
+      
+      
+      </script>
+      <style>
+       
+html,body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    position: fixed;
+    user-select: none;
+}
+body {
+    position: fixed;
+    margin: 0;
+    user-select: none;
+  
+    -webkit-user-select: none;
+
+  background-color:black;
+  
+}
+  ::-webkit-scrollbar {
+    width: 0;
+}
+
+canvas {
+    width: 100%;
+    height: 100%;
+    background-color:black;
+    padding: 0;
+    position: absolute;
+    z-index: -1;
+}
+
+#fps {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+a {
+    position: absolute;
+    color: white;
+    font-size: medium;
+}
+
+#health {
+    width: 20vw;
+    left: calc(50% - 10vw);
+}
+
+#enemies {
+    bottom: 0;
+    left: 2vw;
+}
+
+
+#score {
+    bottom: 0;
+    right: 2vw;
+}
+
+  #navbar-iframe-container{
+   display: none;
+}
+
+        </style>
+    </body>
+</html>

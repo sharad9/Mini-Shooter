@@ -15,7 +15,9 @@
          
       
 'use strict'
-
+var a1 = new Audio("https://www.fesliyanstudios.com/play-mp3/6966");
+var a2 = new Audio("https://www.fesliyanstudios.com/play-mp3/6967");
+var a3 = new Audio("https://www.fesliyanstudios.com/play-mp3/6968");
 var score_board, now, c, ctx, W, H, player, target_ray, target_point,
     enemy_ref, health_ref, rays, player_rays, view_points,
     intersects, joysticks, bullets, player_bullets, enemies,
@@ -31,6 +33,9 @@ const rad = (deg) => deg*Math.PI/180
 const cos = a => Math.cos(rad(a))
 const sin = a => Math.sin(rad(a))
 
+
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
 const sum = (arr) => {
     var sum = 0
     for(let e of arr) sum += e
@@ -40,16 +45,30 @@ const sum = (arr) => {
 
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
+
+const play_sound = () =>{
+    let list = [a1,a1,a1];
+    let a = list[Math.ceil(Math.random()*3)-1];
+    a.currentTime = 0;
+    a.play();
+}
+/*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
+
+
 const init_score_board = () => {
     score_board = document.createElement("a")
     
     score_board.style.width = window.innerWidth+"px";
    
     score_board.style.backgroundColor = "transparent"
-   // score_board.style.position = "absolute";
+    score_board.style.position = "fixed";
     score_board.style.textAlign = "center";
-    score_board.style.color = "white";
+    score_board.style.color = "black";
     score_board.style.fontWeight="bold";
+    score_board.style.transform = "rotate(90deg)";
+    score_board.style.marginLeft = "47%";
+    score_board.style.width="100%";
+    score_board.style.top = "50%";
     document.body.appendChild(score_board)
     
 }
@@ -57,7 +76,7 @@ const init_score_board = () => {
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
 const update_score_board = () => {
-    score_board.innerHTML = "| Got Hit: "+hit_count+" | "+" Total Killed: "+ score+" | ";
+    score_board.innerHTML = "Got Hit: "+hit_count+"<------>Total Killed: "+ score;
     
 }
 
@@ -130,6 +149,7 @@ class Vector {
     draw(cx = ctx, color = "lime", radius) {
         cx.fillStyle = color
         cx.beginPath()
+        cx.lineCap = "round";
         cx.arc(this.x, this.y, radius||1, 0, 2*Math.PI)
         cx.fill()
         cx.closePath()
@@ -159,18 +179,22 @@ class Joystick {
     draw(cx = ctx) {
         if(this.active) {
             let p = this.pos; let t = this._touch
-            cx.strokeStyle = "lime"
+            cx.strokeStyle = "black"
             cx.beginPath()
             cx.arc(p.x,p.y,40,0,2*Math.PI); cx.stroke()
             cx.closePath(); cx.beginPath()
             cx.arc(t.x,t.y,20,0,2*Math.PI); cx.stroke()
             cx.closePath()
             if(this.info) {
+                cx.save();
+                cx.translate(p.x,p.y);
                 cx.font = "12px Helivicia"
                 cx.textAlign = "center"
                 cx.textBaseline = "middle"
                 cx.fillStyle = "lime"
-                cx.fillText(this.info, p.x, p.y)
+                cx.rotate(Math.PI/2);
+                cx.fillText(this.info, 0, 0);
+                cx.restore();
             }
         }
     }
@@ -182,7 +206,7 @@ class Joystick {
 const touch_start = e => {
     let touches = e.changedTouches
     for(let j = 0; j < touches.length; j++) {
-        let i = touches[j].clientX < W/2? 0: 1
+        let i = touches[j].clientY < H/2? 0: 1
         joysticks["$"+i] = new Joystick(
             touches[j].identifier,
             touches[j].clientX, touches[j].clientY
@@ -223,6 +247,7 @@ const touch_end = e => {
         }
     } if(shoot && shoot_time_frame < 0) {
         player_shoot()
+        play_sound()
         shoot_time_frame = shoot_cooldown
     }
 }
@@ -245,7 +270,7 @@ const add_event_listeners = () => {
 /*_=======_=======_=======_=======_=======_=======_=======_=======_=======__*/
 
 class Bullet {
-    constructor(p, v, color = "white", active = true) {
+    constructor(p, v, color = "black", active = true) {
         this.p = p
         this.v = v.copy.norm.mult(3)
         this.color = color
@@ -285,12 +310,13 @@ class Ray {
     
    
     
-     draw(cx = ctx, color = "red", width = 2, ints = false,
+     draw(cx = ctx, color = "orange", width = 2, ints = false,
          dp = false) {
         cx.strokeStyle = color
         cx.lineWidth = width
         cx.beginPath()
         let l = this.draw_length || this.length
+        cx.lineCap = "round";
         cx.moveTo(this.p.x, this.p.y)
         cx.lineTo(this.p.x+this.v.norm.x*l,
                   this.p.y+this.v.norm.y*l)
@@ -308,7 +334,7 @@ class Player{
         this.p = new Vector(x,y);
         this.v = new Vector(0,-1);
         this.size = 10;
-        this.color = "#00b87d";
+        this.color = "black";
         this.fov = 120;
     }
 
@@ -398,7 +424,7 @@ class Ally {
 
         for(let bullet of player_bullets) {
             let d = this.size + bullet.size
-            if(this.p.sub(bullet.p).length < d && this.alive) {
+            if(this.p.sub(bullet.p).length <= d && this.alive) {
                 this.alive = false;
                 score++;
                 allies.splice(allies.indexOf(this),1)
@@ -462,7 +488,7 @@ const create_allies = () => {
         let x = Math.floor((W-40)*Math.random())+20
         let y = Math.floor((H-40)*Math.random())+20
         let p = new Vector(x,y)
-         allies.push(new Ally(p.x, p.y, "🐼"))
+         allies.push(new Ally(p.x, p.y, "🤢"))
     }
     
 }
@@ -561,7 +587,7 @@ const ally_shoot_setup = () =>{
             setTimeout(()=>{
                 let b = new Bullet(ally.p,
                 player.p.sub(ally.p))
-                b.color = "red"
+                b.color = "gray"
                 if(ally.alive) bullets.push(b)
             },
             allies.indexOf(ally)*500)
@@ -577,7 +603,7 @@ const draw_target = () => {
     if(target_ray) {
         ctx.save(); ctx.setLineDash([3,45])
         target_ray.draw(); ctx.restore()
-        if(target_point) target_point.draw(ctx, "rgba(255,0,0,1)", 5)
+        if(target_point) target_point.draw(ctx, "rgba(255,0,0,1)", 3)
     }
 }
 
@@ -660,7 +686,7 @@ const setup = (first_load = 1) => {
     init_vars()
     if(first_load) {
         init_score_board()
-        set_level(1)
+        set_level(2)
     }
     
     create_map() 
@@ -740,8 +766,8 @@ window.onload = () => {
 
 
 
-      
-      
+   
+
 
       
       </script>
